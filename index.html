@@ -2,14 +2,818 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>咲く・散る</title>
-<meta http-equiv="refresh" content="0; url=bloom-scatter.html">
-<link rel="canonical" href="bloom-scatter.html">
-<script>location.replace('bloom-scatter.html' + location.search + location.hash);</script>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4efe6;color:#3a2a2c;font-family:"Hiragino Mincho ProN","Yu Mincho",serif}a{color:#b8344f}</style>
+<meta name="description" content="一輪の花が蕾から開き、満開を迎え、花びらが散って再び蕾に還る。WebGL のジェネラティブ作品。">
+<meta property="og:title" content="咲く・散る">
+<meta property="og:description" content="蕾 → 開花 → 満開 → 散る → 再生 を一つの位相でループする WebGL 作品">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://york-14.github.io/Generative-Flower/">
+<meta property="og:image" content="https://york-14.github.io/Generative-Flower/docs/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#f4efe6">
+<style>
+  :root {
+    --paper: #f4efe6;
+    --ink: #3a2a2c;
+    --ink-soft: rgba(58, 42, 44, .62);
+    --panel: rgba(250, 246, 240, .82);
+    --line: rgba(58, 42, 44, .14);
+    --accent: #b8344f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); overflow: hidden;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; -webkit-tap-highlight-color: transparent; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; touch-action: none; }
+  header { position: fixed; top: max(14px, env(safe-area-inset-top)); left: 16px; right: 16px; pointer-events: none;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 500; letter-spacing: .18em; }
+  header h1 small { display: block; font-size: 10px; letter-spacing: .24em; color: var(--ink-soft); margin-top: 3px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  #readout { font: 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-soft); text-align: right; white-space: pre; }
+  #panel { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom));
+    width: min(560px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 10px 14px 12px; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif; font-size: 12px; }
+  .row { display: grid; grid-template-columns: 7.2em 1fr 3.4em; align-items: center; gap: 8px; min-height: 26px; }
+  .row label { color: var(--ink); white-space: nowrap; }
+  .row output { font: 11px ui-monospace, "SF Mono", Menlo, monospace; text-align: right; color: var(--ink-soft); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+  @media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; margin: 0; }
+  input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line); border-radius: 2px; }
+  input[type=range]::-moz-range-track { height: 2px; background: var(--line); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -6px; border-radius: 50%;
+    background: var(--paper); border: 1.5px solid var(--accent); }
+  input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--paper); border: 1.5px solid var(--accent); }
+  #phiRow { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
+  .btns { display: flex; gap: 8px; margin-top: 8px; }
+  button { flex: 1; font: inherit; font-size: 12px; color: var(--ink); background: transparent; border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #toggle { position: fixed; right: 16px; bottom: max(12px, env(safe-area-inset-bottom)); display: none; flex: none; }
+  body.collapsed #panel { display: none; }
+  body.collapsed #toggle { display: block; }
+  #err { position: fixed; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; }
+</style>
 </head>
 <body>
-<p><a href="bloom-scatter.html">咲く・散る を開く</a></p>
+<canvas id="c"></canvas>
+<header>
+  <h1>咲く・散る<small>BLOOM — SCATTER</small></h1>
+  <div id="readout"></div>
+</header>
+
+<div id="panel">
+  <div class="grid2">
+    <div class="row"><label for="sN">花びらの数 N</label><input id="sN" type="range" min="5" max="12" step="1" value="5"><output id="oN"></output></div>
+    <div class="row"><label for="sL">拡散長 λ</label><input id="sL" type="range" min="0.10" max="0.60" step="0.01" value="0.26"><output id="oL"></output></div>
+    <div class="row"><label for="sR">カオスの強さ</label><input id="sR" type="range" min="3.5" max="4.0" step="0.01" value="3.95"><output id="oR"></output></div>
+    <div class="row"><label for="sT">周期 T（秒）</label><input id="sT" type="range" min="6" max="40" step="1" value="20"><output id="oT"></output></div>
+  </div>
+  <div class="row" id="phiRow"><label for="sP">位相 φ</label><input id="sP" type="range" min="0" max="1" step="0.001" value="0"><output id="oP"></output></div>
+  <div class="btns">
+    <button id="bPlay" type="button">一時停止</button>
+    <button id="bSeed" type="button">別の花を生成</button>
+    <button id="bHide" type="button" aria-label="パネルを隠す">隠す</button>
+  </div>
+</div>
+<button id="toggle" type="button">操作</button>
+<div id="err">この端末では WebGL を利用できません。</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ------------------------------------------------------------------
+ * 咲く・散る
+ *
+ * 位相 φ ∈ [0,1) ひとつで、蕾 → 開花 → 満開 → 散る → 余韻と再生 を表す。
+ * 描画はすべて φ の閉じた式で決まり、逐次積分はしない（スクラブ可能）。
+ *
+ *   パス1  花本体   : フルスクリーンのフラグメントシェーダ
+ *                     極座標セル分割 / c = exp(-r/λ) / 閾値応答 / q = p + ε·w(p,φ)
+ *   パス2  散る花びら: 最大200枚のクアッド。形は花びら SDF をフラグメントで評価
+ *
+ * 散る相では花びらごとにロジスティック写像 x ← r·x(1−x) を反復し、
+ * r を 2.9（安定）からカオス域へ上げることで、秩序だった離脱順が崩れていく。
+ * ------------------------------------------------------------------ */
+
+const MAX_PARTICLES = 200;
+const MAX_LAYERS = 3;
+const DATA_W = 64;              // 花びらごとの情報を入れるテクスチャ幅（3層 × N≤12 = 36）
+const T_REGROW = 0.86;          // これ以降は次の蕾
+const TD_MIN = 0.60, TD_MAX = 0.845;
+
+/* ---------------- shared GLSL ---------------- */
+const COMMON = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+#define PI  3.14159265
+#define TAU 6.28318531
+uniform vec2  uRes;
+uniform float uPhi;
+uniform float uN;
+uniform float uLambda;
+uniform float uRmax;
+uniform float uNotch;
+uniform float uKOpen;
+uniform vec3  uPale;
+uniform vec3  uMid;
+uniform vec3  uDeep;
+uniform vec3  uVein;
+uniform float uCy;        // 花の中心の縦位置（UI パネルを避ける）
+
+float hash11(float n){ return fract(sin(n*127.1)*43758.5453); }
+float hash21(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }
+
+float noise3(vec3 x){
+  vec3 i = floor(x), f = fract(x);
+  f = f*f*(3.0-2.0*f);
+  float n = i.x + i.y*57.0 + i.z*113.0;
+  return mix(mix(mix(hash11(n      ), hash11(n+  1.0), f.x),
+                 mix(hash11(n+ 57.0), hash11(n+ 58.0), f.x), f.y),
+             mix(mix(hash11(n+113.0), hash11(n+114.0), f.x),
+                 mix(hash11(n+170.0), hash11(n+171.0), f.x), f.y), f.z);
+}
+
+/* ---- 位相カーブ（すべて φ=0 と φ=1 で一致する） ---- */
+float easeOut(float x){ x = clamp(x, 0.0, 1.0); return 1.0 - (1.0-x)*(1.0-x)*(1.0-x); }
+
+// 開き具合 O ∈ [0,1]。内側の層ほど遅れて開く
+float openAt(float phi, float L){
+  if (phi >= ${T_REGROW.toFixed(3)}) return 0.0;
+  return easeOut((phi - 0.20 - 0.035*L) / (0.25 - 0.02*L));
+}
+// 再生相で中心から育つ
+float growAt(float phi){
+  return phi < ${T_REGROW.toFixed(3)} ? 1.0 : smoothstep(0.88, 1.0, phi);
+}
+// 蕾の呼吸（値も微分も両端で 0）
+float breathAt(float phi){
+  if (phi >= 0.20) return 1.0;
+  float s = sin(PI*phi/0.10);
+  return 1.0 + 0.035*s*s;
+}
+// 萼・雄しべ：散ったあと萎み、次の蕾とともに戻る
+float calyxAt(float phi){
+  if (phi < 0.84) return 1.0;
+  if (phi < 0.90) return 1.0 - smoothstep(0.84, 0.90, phi);
+  return smoothstep(0.90, 1.0, phi);
+}
+// ロジスティック写像の r（φ に応じて 2.9 → r_max）
+float logisticR(float phi){ return 2.9 + (uRmax - 2.9)*smoothstep(0.60, 0.84, phi)*(1.0 - smoothstep(0.88, 1.0, phi)); }
+float chaosAt(float phi){ return (logisticR(phi) - 2.9) / 1.05; }
+// 歪みの強さ ε：満開で ≈0、散る相でカオスとともに増す
+float epsAt(float phi){
+  float bud = 1.0 - smoothstep(0.12, 0.25, phi) + smoothstep(0.88, 1.0, phi);
+  float c = chaosAt(phi);
+  return 0.010*bud + 0.085*c*sqrt(c)*(1.0 - smoothstep(0.84, 0.95, phi));
+}
+// 領域の歪み w(p,φ)：ノイズ空間の閉曲線に沿ってサンプリング
+vec2 warp(vec2 p, float phi){
+  float a = TAU*phi;
+  vec3 P = vec3(p*1.7 + 0.9*vec2(cos(a), sin(a)), 0.9*sin(a + 1.3));
+  vec2 w = vec2(noise3(P), noise3(P + vec3(19.1, 7.3, 3.7))) - 0.5;
+  P = P*2.03 + vec3(4.1, 1.7, 9.2);
+  w += 0.5*(vec2(noise3(P), noise3(P + vec3(5.9, 13.1, 2.3))) - 0.5);
+  return w*2.0;
+}
+
+/* ---- 花の形 ---- */
+float layerOffset(float L){ return L*PI/uN; }
+float layerR(float L, float O, float phi){
+  float rb = 0.205 - 0.03*L;
+  float rf = 0.74 - 0.14*L;
+  return mix(rb, rf, O) * breathAt(phi) * growAt(phi);
+}
+float layerW(float O){ return mix(1.75, 1.13, O); }
+float layerK(float O, float L){ return mix(0.30, uKOpen, O) * (1.0 + 0.12*L); }
+
+// 花びらの外形 r_petal(θ) = R·|cos(N(θ−θi)/2w)|^k、先端に桜型の切れ込み
+float petalR(float dth, float R, float w, float k, float notch){
+  float s = dth*uN/(2.0*w);
+  if (abs(s) >= 1.5707) return -1.0;
+  float base = pow(cos(s), k);
+  float v = abs(s)/0.15;
+  float nt = notch*max(0.0, 1.0 - v*v);
+  return R*base*(1.0 - nt);
+}
+
+// 散る直前の震え
+float wiggleAt(float phi, float tD, float h){
+  return chaosAt(phi)*0.05*sin(TAU*h + 70.0*(phi - tD));
+}
+
+// 色：モルフォゲン c = exp(-r/λ) の閾値応答 + 放射状の脈
+//  rn : 層の半径で正規化した中心からの距離   s : 花びら内の角度座標 [-π/2, π/2]
+vec4 petalColor(float rn, float s, float R, float w, float hue, float O, float detached){
+  float c = exp(-rn/uLambda);
+  float deep = smoothstep(0.36, 0.52, c)*(1.0 - 0.6*detached);   // 付け根の濃い紅
+  float mid  = smoothstep(0.16, 0.30, c);           // 淡い花色への移行帯
+  float edge = smoothstep(0.075, 0.035, c);         // 縁のわずかな透け
+  vec3 col = mix(uPale, uMid, mid);
+  col = mix(col, uDeep, deep);
+  col = mix(col, uPale*1.03 + 0.02, edge);
+  // 蕾のうちは色が濃い
+  col = mix(col, mix(uMid, uDeep, 0.35), (1.0 - O)*0.55);
+  // 放射状の脈：中心線と、扇状に広がる細い脈
+  float r = rn*R;
+  float sc = s*(1.0 + 0.25*rn);
+  float F = 3.0;
+  float dl = abs(fract(sc*F/PI*2.0 + 0.5) - 0.5)/(F/PI*2.0) * 2.0*w/uN * r;
+  float dc = abs(sc)*2.0*w/uN * r;
+  float fade = smoothstep(0.03, 0.18, rn) * (1.0 - smoothstep(0.55, 0.95, rn));
+  float vein = exp(-pow(dl/0.0032, 2.0))*0.45 + exp(-pow(dc/0.0042, 2.0))*0.75;
+  col = mix(col, uVein, vein*fade*0.55);
+  // 花びらごとの色相の揺らぎ
+  float h = hue - 0.5;
+  col += h*vec3(0.035, -0.02, 0.05);
+  // 付け根の陰と先端の明るさ
+  col *= 0.86 + 0.14*smoothstep(0.0, 0.5, rn);
+  float alpha = mix(1.0, 0.70, edge);
+  return vec4(col, alpha);
+}
+`;
+
+/* ---------------- pass 1: flower body ---------------- */
+const VS_FULL = `
+attribute vec2 aPos;
+void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }
+`;
+
+const FS_BODY = COMMON + `
+uniform sampler2D uData;     // r: 離脱時刻, g: 色相, b: 震えの位相
+uniform float uStamens;
+uniform float uSeed;
+
+vec4 petalData(float L, float idx){
+  return texture2D(uData, vec2((L*uN + idx + 0.5)/${DATA_W.toFixed(1)}, 0.5));
+}
+
+float paperNoise(vec2 p){
+  // ごく弱い fBm（静的なのでループに影響しない）
+  float a = 0.0, f = 1.0, amp = 0.5;
+  for (int i = 0; i < 4; i++){ a += amp*noise3(vec3(p*f*3.0, 7.0)); f *= 2.1; amp *= 0.5; }
+  return a;
+}
+
+void main(){
+  float m = min(uRes.x, uRes.y);
+  vec2 p = (gl_FragCoord.xy - 0.5*uRes)/(0.5*m);
+  p.y -= uCy;
+  float px = 2.0/m;
+
+  // 背景：淡い紙
+  vec3 col = vec3(0.957, 0.937, 0.902);
+  col += (paperNoise(p) - 0.5)*0.035;
+  col += (hash21(floor(gl_FragCoord.xy)) - 0.5)*0.018;
+  col *= 1.0 - 0.10*smoothstep(0.7, 2.0, length(p*vec2(0.85, 1.0)));
+
+  // 領域の歪み q = p + ε·w(p,φ)
+  float eps = epsAt(uPhi);
+  vec2 q = p;
+  if (eps > 1e-4) q += eps*warp(p, uPhi);
+  float r  = length(q);
+  float th = atan(q.y, q.x);
+  float cell = TAU/uN;
+
+  // 紙に落ちる柔らかい影（外側の層だけで近似）
+  {
+    vec2 qs = q - vec2(0.022, -0.035)*min(1.0, 5.0*layerR(0.0, openAt(uPhi, 0.0), uPhi));
+    float rs = length(qs), ts = atan(qs.y, qs.x);
+    float O = openAt(uPhi, 0.0);
+    float R = layerR(0.0, O, uPhi);
+    float w = layerW(O), k = layerK(O, 0.0);
+    float tw = (1.0 - O)*1.5;
+    float tL = ts - tw*min(rs/max(R, 1e-3), 1.5);
+    float ci = floor(tL/cell + 0.5);
+    float sh = 0.0;
+    for (int j = -1; j <= 1; j++){
+      float idx = mod(ci + float(j), uN);
+      float tD = 0.5 + petalData(0.0, idx).r*0.4;
+      if (uPhi >= tD && uPhi < ${T_REGROW.toFixed(3)}) continue;
+      float rp = petalR(tL - (ci + float(j))*cell, R, w, k, uNotch*O);
+      if (rp > 0.0) sh = max(sh, smoothstep(0.06, -0.04, rs - rp));
+    }
+    col *= 1.0 - 0.09*sh;
+  }
+
+  // 萼（散ったあとに残り、次の蕾を包む）
+  {
+    float cs = calyxAt(uPhi);
+    float Rs = 0.27*cs;
+    if (Rs > 1e-3){
+      float tL = th - PI/uN;
+      float ci = floor(tL/cell + 0.5);
+      float dth = tL - ci*cell;
+      float rp = petalR(dth, Rs, 0.9, 1.6, 0.0);
+      float sd = rp - r;
+      col *= 1.0 - 0.18*smoothstep(min(0.03, 0.15*Rs), 0.0, -sd)*step(0.0, rp)*step(sd, 0.0);
+      float a = clamp(sd/px + 0.5, 0.0, 1.0)*step(0.0, rp);
+      vec3 sc = mix(vec3(0.42, 0.16, 0.20), vec3(0.30, 0.36, 0.20), smoothstep(0.2, 1.0, r/Rs));
+      sc *= 0.85 + 0.15*cos(dth*uN*0.5);
+      col = mix(col, sc, a*0.95);
+    }
+  }
+
+  // 花びら：外側から内側へ 3 層。各層は角度方向に N 個のセル
+  for (int Li = 0; Li < ${MAX_LAYERS}; Li++){
+    float L = float(Li);
+    float O = openAt(uPhi, L);
+    float R = layerR(L, O, uPhi);
+    if (R < 1e-3) continue;
+    float w = layerW(O), k = layerK(O, L);
+    float tw = (1.0 - O)*1.5;                       // 蕾のねじれ
+    float tL = th - layerOffset(L) - tw*min(r/R, 1.5);
+    float ci = floor(tL/cell + 0.5);
+    float shW = min(0.028 + 0.018*L, 0.16*R);
+    for (int j = -1; j <= 1; j++){
+      float idx = mod(ci + float(j), uN);
+      vec4 d = petalData(L, idx);
+      float tD = 0.5 + d.r*0.4;
+      if (uPhi >= tD && uPhi < ${T_REGROW.toFixed(3)}) continue;   // 離脱済み → 粒子へ
+      float dth = tL - (ci + float(j))*cell - wiggleAt(uPhi, tD, d.b);
+      float rp = petalR(dth, R, w, k, uNotch*O);
+      if (rp <= 0.0) continue;
+      float sd = rp - r;
+      // セル境界 = 重なりの柔らかい影
+      if (sd < 0.0) col *= 1.0 - (0.15 + 0.05*L)*smoothstep(shW, 0.0, -sd);
+      float a = clamp(sd/px + 0.5, 0.0, 1.0);
+      if (a > 0.0){
+        float s = dth*uN/(2.0*w);
+        vec4 pc = petalColor(r/R, s, R, w, d.g, O, 0.0);
+        // 自分の縁はわずかに明るく
+        pc.rgb += 0.03*smoothstep(0.012, 0.0, sd);
+        col = mix(col, pc.rgb, a*pc.a);
+      }
+    }
+  }
+
+  // 雄しべ：金色の点群。葯は c = exp(-r/λR) の閾値付近に並ぶ
+  {
+    float O2 = openAt(uPhi, 2.0);
+    float vis = smoothstep(0.25, 0.85, O2) * calyxAt(uPhi);
+    if (vis > 0.002){
+      float R0 = 0.74;
+      float M = uStamens;
+      float sec = TAU/M;
+      float t0 = th < 0.0 ? th + TAU : th;
+      float j0 = floor(t0/sec);
+      float wither = smoothstep(0.80, 0.88, uPhi);
+      float spread = mix(0.55, 1.0, vis);
+      float acc = 0.0; vec3 sc = vec3(0.0);
+      for (int j = -2; j <= 2; j++){
+        float idx = mod(j0 + float(j), M);
+        float h1 = hash11(idx*3.17 + uSeed*0.13);
+        float h2 = hash11(idx*7.91 + uSeed*0.29 + 3.0);
+        float ang = (idx + 0.5 + (h1 - 0.5)*0.7)*sec;
+        float T1 = mix(0.30, 0.58, h2);                 // 閾値
+        float len = min(uLambda*R0*(-log(T1)), 0.40) * spread;
+        vec2 dir = vec2(cos(ang), sin(ang));
+        vec2 tip = dir*len;
+        float tt = clamp(dot(q, dir)/len, 0.0, 1.0);
+        float dl = length(q - tip*tt);
+        float fil = smoothstep(px*1.3, 0.0, dl - 0.0018)*smoothstep(0.02, 0.10, tt);
+        vec3 fc = mix(uDeep*0.9, mix(uPale, vec3(1.0), 0.4), smoothstep(0.1, 1.0, tt));
+        float ra = 0.013 + 0.004*h1;
+        float da = length(q - tip);
+        float anth = clamp((ra - da)/px + 0.5, 0.0, 1.0);
+        vec3 gold = mix(vec3(0.98, 0.80, 0.30), vec3(0.78, 0.52, 0.16), smoothstep(0.0, ra, da + ra*0.3));
+        gold = mix(gold, vec3(0.50, 0.34, 0.20), wither);
+        // 葯の小さな影
+        float ash = smoothstep(ra + 0.012, ra, length(q - tip - vec2(0.004, -0.006)));
+        col *= 1.0 - 0.12*ash*vis*(1.0 - anth);
+        col = mix(col, fc, fil*vis*0.85*(1.0 - anth));
+        col = mix(col, gold, anth*vis);
+      }
+      // 花粉の点
+      vec2 g = q*55.0;
+      vec2 gi = floor(g);
+      float hp = hash21(gi + uSeed);
+      vec2 gp = (gi + 0.2 + 0.6*vec2(hash21(gi + 1.7), hash21(gi + 9.1)))/55.0;
+      float cc = exp(-length(gp)/(uLambda*R0));
+      float on = step(0.72, hp)*smoothstep(0.42, 0.55, cc)*(1.0 - smoothstep(0.85, 0.95, cc));
+      float dp = length(q - gp);
+      col = mix(col, vec3(0.93, 0.70, 0.25)*(1.0 - 0.3*wither), on*vis*smoothstep(0.0045, 0.0025, dp));
+      // 雌しべ
+      float dpi = length(q);
+      col = mix(col, vec3(0.62, 0.70, 0.36), vis*smoothstep(0.016, 0.012, dpi));
+      col = mix(col, vec3(0.80, 0.84, 0.50), vis*smoothstep(0.007, 0.004, dpi));
+    }
+  }
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+/* ---------------- pass 2: scattered petals ---------------- */
+const VS_PART = COMMON + `
+attribute vec2 aCorner;
+attribute vec4 aA;   // tD, kind(0:この花 1:風に乗ってきた花びら), layer, 軸角
+attribute vec4 aB;   // 回転速度, 裏返り速度, 揺らぎ A, 色相
+attribute vec4 aC;   // p0(ambient 用 0..1), 大きさ, 震えの位相
+uniform float uShadow;
+varying vec2  vLocal;
+varying float vR, vW, vK, vFlip, vAlpha, vHue;
+
+// 解析的な curl noise：ψ の回転 (∂ψ/∂y, −∂ψ/∂x)
+vec2 curlNoise(vec2 p, float t, float h){
+  float a1 = 1.7*p.x + 0.9*t + h*6.0, b1 = 1.3*p.y - 0.7*t + h*3.0;
+  float a2 = 3.1*p.x - 2.3*p.y + 1.3*t + h*9.0;
+  float dpx = 1.7*cos(a1)*cos(b1) + 0.5*3.1*cos(a2);
+  float dpy = -1.3*sin(a1)*sin(b1) - 0.5*2.3*cos(a2);
+  return vec2(dpy, -dpx);
+}
+
+void main(){
+  float tD = aA.x, kind = aA.y, L = aA.z, axis = aA.w;
+  float tau = uPhi - tD;                    // 離脱してからの経過（位相単位）
+  float fade = 1.0 - smoothstep(0.86, 0.97, uPhi);
+  if (tau < 0.0 || fade <= 0.0){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+  float s = tau*12.0;                       // 名目上の秒
+
+  float R, w, k;
+  vec2 p0;
+  float ang0;
+  if (kind < 0.5){
+    // この花の花びら：離脱時刻の形と位置からそのまま続ける
+    R = layerR(L, 1.0, tD); w = layerW(1.0); k = layerK(1.0, L);
+    ang0 = axis + wiggleAt(tD, tD, aC.w);
+    vec2 piv = 0.5*R*vec2(cos(ang0), sin(ang0));
+    p0 = piv - epsAt(tD)*warp(piv, tD);
+  } else {
+    R = aC.z; w = layerW(1.0); k = layerK(1.0, 0.0);
+    float aspX = uRes.x/min(uRes.x, uRes.y);
+    p0 = aC.x < 0.5 ? vec2(-aspX - 0.25, mix(-0.7, 1.15, aC.y))
+                    : vec2(mix(-aspX, aspX*0.6, aC.x*2.0 - 1.0), 1.25);
+    p0.y -= uCy;
+    ang0 = axis;
+  }
+
+  // p(τ) = p0 + v0·τ + ½gτ² + A·curlNoise(p0, τ)
+  vec2 dir = vec2(cos(ang0), sin(ang0));
+  vec2 v0 = kind < 0.5 ? dir*0.24 + vec2(0.28, 0.10) : vec2(0.46, -0.04);
+  vec2 g  = vec2(0.15, -0.19);
+  float A = aB.z*(1.0 - exp(-1.6*s));
+  vec2 pos = p0 + v0*s + 0.5*g*s*s + A*curlNoise(p0*1.3, s*0.7, aB.w);
+
+  float rot  = ang0 + aB.x*s;
+  float flip = cos(aB.y*s);                 // 回転しながら裏返る
+  float scl  = kind < 0.5 ? 1.0 - 0.35*smoothstep(0.0, 3.0, s) : 1.0;
+
+  float hw = R*sin(min(PI*w/uN, 1.5707)) + 0.01;
+  vec2 lc = vec2(mix(-0.01, R*1.02, aCorner.x*0.5 + 0.5), aCorner.y*hw);
+  vec2 rel = (lc - vec2(0.5*R, 0.0))*vec2(1.0, flip)*scl;
+  vec2 wp = pos + mat2(cos(rot), sin(rot), -sin(rot), cos(rot))*rel;
+  if (uShadow > 0.5) wp += vec2(0.018, -0.03)*(1.0 + 0.6*min(s, 2.0));
+  wp.y += uCy;
+
+  vLocal = lc; vR = R; vW = w; vK = k; vFlip = flip; vHue = aB.w;
+  float fin = kind < 0.5 ? 1.0 : smoothstep(0.0, 0.35, s);
+  vAlpha = fade*fin;
+  gl_Position = vec4(wp*min(uRes.x, uRes.y)/uRes, 0.0, 1.0);
+}
+`;
+
+const FS_PART = COMMON + `
+uniform float uShadow;
+varying vec2  vLocal;
+varying float vR, vW, vK, vFlip, vAlpha, vHue;
+void main(){
+  float r = length(vLocal);
+  float th = atan(vLocal.y, vLocal.x);
+  float rp = petalR(th, vR, vW, vK, uNotch);
+  if (rp <= 0.0) discard;
+  float px = 2.0/min(uRes.x, uRes.y);
+  float aa = px/max(abs(vFlip), 0.15);
+  float a = clamp((rp - r)/aa + 0.5, 0.0, 1.0);
+  if (a <= 0.0) discard;
+  if (uShadow > 0.5){ float sa = a*vAlpha*0.07*smoothstep(0.10, 0.32, r/vR); gl_FragColor = vec4(0.18, 0.08, 0.10, 1.0)*sa; return; }
+  vec4 pc = petalColor(r/vR, th*uN/(2.0*vW), vR, vW, vHue, 1.0, 1.0);
+  vec3 col = pc.rgb;
+  if (vFlip < 0.0) col = mix(col, vec3(dot(col, vec3(0.333))), 0.15)*0.86;   // 裏面は少し暗い
+  col *= 0.90 + 0.10*abs(vFlip);                            // 横向きの陰
+  float alpha = a*pc.a*vAlpha*smoothstep(0.10, 0.32, r/vR);
+  gl_FragColor = vec4(col*alpha, alpha);
+}
+`;
+
+/* ---------------- WebGL setup ---------------- */
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: true, preserveDrawingBuffer: false });
+if (!gl) { document.getElementById('err').style.display = 'grid'; return; }
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    console.error(log, src.split('\n').map((l, i) => (i + 1) + ': ' + l).join('\n'));
+    throw new Error('shader compile failed');
+  }
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+
+const progBody = program(VS_FULL, FS_BODY);
+const progPart = program(VS_PART, FS_PART);
+
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+
+const dataTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, dataTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+const partBuf = gl.createBuffer();
+const PART_STRIDE = 14;  // corner(2) + A(4) + B(4) + C(4)
+const loc = {
+  aPos: gl.getAttribLocation(progBody.p, 'aPos'),
+  aCorner: gl.getAttribLocation(progPart.p, 'aCorner'),
+  aA: gl.getAttribLocation(progPart.p, 'aA'),
+  aB: gl.getAttribLocation(progPart.p, 'aB'),
+  aC: gl.getAttribLocation(progPart.p, 'aC'),
+};
+
+/* ---------------- state ---------------- */
+const params = new URLSearchParams(location.search);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const state = {
+  N: 5, lambda: 0.26, rMax: 3.95, T: 20,
+  phi: params.has('phi') ? +params.get('phi') : (reduceMotion ? 0.5 : 0.0),
+  playing: !(reduceMotion || params.has('paused')),
+  seed: params.has('seed') ? +params.get('seed') : 1,
+};
+let look = null;        // seed から決まる花の個性
+let particleCount = 0;
+
+// 決定的な乱数（seed 由来）
+function mulberry32(a) {
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+const PALETTES = [
+  { name: '桜',   pale: [1.00, 0.90, 0.92], mid: [0.98, 0.74, 0.80], deep: [0.74, 0.16, 0.30], vein: [0.86, 0.52, 0.62] },
+  { name: '白梅', pale: [0.99, 0.97, 0.95], mid: [0.96, 0.88, 0.86], deep: [0.66, 0.22, 0.28], vein: [0.86, 0.74, 0.74] },
+  { name: '桃',   pale: [1.00, 0.86, 0.84], mid: [0.98, 0.64, 0.66], deep: [0.78, 0.18, 0.28], vein: [0.90, 0.48, 0.52] },
+  { name: '藤',   pale: [0.95, 0.91, 0.99], mid: [0.82, 0.74, 0.94], deep: [0.46, 0.20, 0.52], vein: [0.68, 0.56, 0.82] },
+  { name: '紅梅', pale: [0.99, 0.80, 0.84], mid: [0.94, 0.52, 0.62], deep: [0.62, 0.08, 0.22], vein: [0.80, 0.34, 0.44] },
+];
+
+function makeLook(seed) {
+  const rnd = mulberry32(seed * 2654435761);
+  const pal = PALETTES[(seed - 1) % PALETTES.length];
+  const j = () => (rnd() - 0.5) * 0.04;
+  const jit = c => c.map(v => Math.min(1, Math.max(0, v + j())));
+  return {
+    name: pal.name,
+    pale: jit(pal.pale), mid: jit(pal.mid), deep: jit(pal.deep), vein: jit(pal.vein),
+    notch: seed === 1 ? 0.13 : 0.04 + rnd() * 0.14,
+    kOpen: 0.42 + rnd() * 0.28,
+    stamens: 22 + Math.floor(rnd() * 14),
+    rnd,
+  };
+}
+
+/* ---- 花びらごとの離脱スケジュール（ロジスティック写像） ----
+ * 花びら k（離脱順）ごとに、予定時刻 φ_k の r を使って x ← r·x(1−x) を反復する。
+ * r ≈ 2.9 では固定点に収束して順序どおり、r が上がると周期倍化を経てカオスになり、
+ * 遅延・回転速度・軌道の揺らぎがばらばらになる。 */
+function logisticR(phi) {
+  const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  return 2.9 + (state.rMax - 2.9) * ss(0.60, 0.84, phi) * (1 - ss(0.88, 1.0, phi));
+}
+function iterate(r, x0, n) { let x = x0; for (let i = 0; i < n; i++) x = r * x * (1 - x); return x; }
+
+function rebuild() {
+  const N = state.N, M = N * MAX_LAYERS;
+  const rnd = mulberry32(state.seed * 7919 + N * 31);
+  const tex = new Uint8Array(DATA_W * 4);
+  const verts = new Float32Array(MAX_PARTICLES * 6 * PART_STRIDE);
+  const corners = [[-1, -1], [1, -1], [-1, 1], [-1, 1], [1, -1], [1, 1]];
+  const start = Math.floor(rnd() * N), dirSign = rnd() < 0.5 ? 1 : -1;
+  let vi = 0;
+  const push = (A, B, C) => {
+    for (const c of corners) { verts.set([c[0], c[1], ...A, ...B, ...C], vi); vi += PART_STRIDE; }
+  };
+
+  // この花の花びら：外側の層から、円周に沿って順に
+  const flower = [];
+  for (let L = 0; L < MAX_LAYERS; L++) for (let n = 0; n < N; n++) {
+    const idx = ((start + dirSign * n) % N + N) % N;
+    const k = L * N + n;
+    const phiK = TD_MIN + (0.80 - TD_MIN) * k / (M - 1);
+    const r = logisticR(phiK);
+    const chaos = (r - 2.9) / 1.05;
+    let x = iterate(r, 0.1 + 0.8 * rnd(), 60);
+    const x1 = x = r * x * (1 - x), x2 = x = r * x * (1 - x), x3 = x = r * x * (1 - x);
+    let tD = phiK + chaos * (x1 - 0.5) * 0.16;
+    tD = Math.min(TD_MAX, Math.max(TD_MIN, tD));
+    const bT = Math.round((tD - 0.5) / 0.4 * 255);
+    const bH = Math.floor(rnd() * 256), bW = Math.floor(rnd() * 256);
+    const o = (L * N + idx) * 4;
+    tex[o] = bT; tex[o + 1] = bH; tex[o + 2] = bW; tex[o + 3] = 255;
+    flower.push({
+      A: [0.5 + bT / 255 * 0.4, 0, L, L * Math.PI / N + idx * 2 * Math.PI / N],
+      B: [(rnd() < 0.5 ? -1 : 1) * (0.25 + 1.6 * x2 * (0.3 + chaos)), 0.9 + 2.6 * x3, 0.02 + 0.10 * x3 * (0.2 + chaos), bH / 255],
+      C: [0, 0, 0, bW / 255],
+    });
+  }
+  // 風に乗ってくる、ほかの花の花びら（遠景）
+  const ambient = MAX_PARTICLES - M;
+  for (let i = 0; i < ambient; i++) {
+    const phiK = 0.58 + 0.26 * (i / ambient);
+    const r = logisticR(phiK + 0.02);
+    const chaos = (r - 2.9) / 1.05;
+    let x = iterate(r, 0.1 + 0.8 * rnd(), 40);
+    const x1 = x = r * x * (1 - x), x2 = x = r * x * (1 - x);
+    const tD = Math.min(0.90, Math.max(0.56, phiK + (x1 - 0.5) * 0.08 * (0.3 + chaos)));
+    push([tD, 1, 0, rnd() * Math.PI * 2],
+         [(rnd() < 0.5 ? -1 : 1) * (0.4 + 2.0 * x2), 1.0 + 3.0 * rnd(), 0.05 + 0.18 * x2 * (0.3 + chaos), rnd()],
+         [rnd(), rnd(), 0.07 + 0.11 * rnd() * rnd(), rnd()]);
+  }
+  for (const f of flower) push(f.A, f.B, f.C);   // この花の花びらを最前面に
+  particleCount = MAX_PARTICLES;
+
+  gl.bindTexture(gl.TEXTURE_2D, dataTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, DATA_W, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, tex);
+  gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+}
+
+/* ---------------- render ---------------- */
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+}
+
+// パネルが画面の下を覆うときは、残りの領域の中央に花を置く
+function centerY() {
+  const panel = document.getElementById('panel');
+  const hidden = document.body.classList.contains('collapsed');
+  const ph = hidden ? 0 : panel.getBoundingClientRect().height + 12;
+  const w = canvas.clientWidth, h = canvas.clientHeight, m = Math.min(w, h);
+  const shift = Math.min(ph * 0.5, Math.max(0, h - w) * 0.5);   // 縦長のときだけ
+  return 0.06 + shift / (0.5 * m);
+}
+function setCommon(u) {
+  gl.uniform2f(u.uRes, canvas.width, canvas.height);
+  gl.uniform1f(u.uPhi, state.phi);
+  gl.uniform1f(u.uN, state.N);
+  gl.uniform1f(u.uLambda, state.lambda);
+  gl.uniform1f(u.uRmax, state.rMax);
+  gl.uniform1f(u.uNotch, look.notch);
+  gl.uniform1f(u.uKOpen, look.kOpen);
+  gl.uniform3fv(u.uPale, look.pale);
+  gl.uniform3fv(u.uMid, look.mid);
+  gl.uniform3fv(u.uDeep, look.deep);
+  gl.uniform3fv(u.uVein, look.vein);
+  gl.uniform1f(u.uCy, centerY());
+}
+
+function render() {
+  resize();
+  gl.viewport(0, 0, canvas.width, canvas.height);
+
+  // pass 1
+  gl.disable(gl.BLEND);
+  gl.useProgram(progBody.p);
+  setCommon(progBody.u);
+  gl.uniform1f(progBody.u.uStamens, look.stamens);
+  gl.uniform1f(progBody.u.uSeed, state.seed);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, dataTex);
+  gl.uniform1i(progBody.u.uData, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.enableVertexAttribArray(loc.aPos);
+  gl.vertexAttribPointer(loc.aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  gl.disableVertexAttribArray(loc.aPos);
+
+  // pass 2 — 散る相のみ
+  if (state.phi >= 0.555 && state.phi < 0.975) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(progPart.p);
+    setCommon(progPart.u);
+    gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+    const B = PART_STRIDE * 4;
+    for (const [name, size, off] of [['aCorner', 2, 0], ['aA', 4, 2], ['aB', 4, 6], ['aC', 4, 10]]) {
+      gl.enableVertexAttribArray(loc[name]);
+      gl.vertexAttribPointer(loc[name], size, gl.FLOAT, false, B, off * 4);
+    }
+    gl.uniform1f(progPart.u.uShadow, 1);
+    gl.drawArrays(gl.TRIANGLES, 0, particleCount * 6);
+    gl.uniform1f(progPart.u.uShadow, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, particleCount * 6);
+    for (const name of ['aCorner', 'aA', 'aB', 'aC']) gl.disableVertexAttribArray(loc[name]);
+  }
+}
+
+/* ---------------- UI ---------------- */
+const $ = id => document.getElementById(id);
+const ui = { sN: $('sN'), sL: $('sL'), sR: $('sR'), sT: $('sT'), sP: $('sP') };
+const PHASES = [[0.20, '蕾'], [0.45, '開花'], [0.60, '満開'], [0.85, '散る'], [1.01, '余韻と再生']];
+
+function syncLabels() {
+  $('oN').textContent = state.N;
+  $('oL').textContent = state.lambda.toFixed(2);
+  $('oR').textContent = state.rMax.toFixed(2);
+  $('oT').textContent = state.T + 's';
+  $('oP').textContent = state.phi.toFixed(3);
+  $('bPlay').textContent = state.playing ? '一時停止' : '再生';
+}
+let lastReadout = '';
+function syncReadout() {
+  const name = PHASES.find(p => state.phi < p[0])[1];
+  const txt = `${name}　φ ${state.phi.toFixed(2)}\nr ${logisticR(state.phi).toFixed(3)}　${look.name}`;
+  if (txt !== lastReadout) { $('readout').textContent = txt; lastReadout = txt; }
+}
+
+ui.sN.value = state.N; ui.sL.value = state.lambda; ui.sR.value = state.rMax; ui.sT.value = state.T; ui.sP.value = state.phi;
+ui.sN.addEventListener('input', () => { state.N = +ui.sN.value; rebuild(); syncLabels(); requestDraw(); });
+ui.sL.addEventListener('input', () => { state.lambda = +ui.sL.value; syncLabels(); requestDraw(); });
+ui.sR.addEventListener('input', () => { state.rMax = +ui.sR.value; rebuild(); syncLabels(); requestDraw(); });
+ui.sT.addEventListener('input', () => { state.T = +ui.sT.value; syncLabels(); });
+let scrubbing = false;
+ui.sP.addEventListener('pointerdown', () => { scrubbing = true; });
+window.addEventListener('pointerup', () => { scrubbing = false; });
+ui.sP.addEventListener('input', () => { state.phi = +ui.sP.value; syncLabels(); requestDraw(); });
+$('bPlay').addEventListener('click', () => { state.playing = !state.playing; syncLabels(); requestDraw(); });
+$('bSeed').addEventListener('click', () => { state.seed += 1; look = makeLook(state.seed); rebuild(); requestDraw(); });
+$('bHide').addEventListener('click', () => { document.body.classList.add('collapsed'); requestDraw(); });
+$('toggle').addEventListener('click', () => { document.body.classList.remove('collapsed'); requestDraw(); });
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' && e.key !== ' ') return;
+  if (e.key === ' ') { e.preventDefault(); $('bPlay').click(); }
+});
+
+/* ---------------- loop ---------------- */
+let last = performance.now(), pending = false, frameReq = 0;
+function frame(now) {
+  frameReq = 0;
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (state.playing && !scrubbing) {
+    state.phi = (state.phi + dt / state.T) % 1;
+    ui.sP.value = state.phi; $('oP').textContent = state.phi.toFixed(3);
+  }
+  render(); syncReadout();
+  pending = false;
+  if (state.playing) frameReq = requestAnimationFrame(frame);
+}
+function requestDraw() {
+  if (frameReq) return;
+  last = performance.now();
+  frameReq = requestAnimationFrame(frame);
+}
+window.addEventListener('resize', requestDraw);
+
+look = makeLook(state.seed);
+rebuild();
+syncLabels();
+requestDraw();
+
+// テスト・スクラブ用フック
+window.bloom = {
+  state,
+  setPhi(v) { state.phi = v; ui.sP.value = v; syncLabels(); render(); syncReadout(); },
+  // 同じタスク内で描画して読み出す（preserveDrawingBuffer なしでも有効）
+  pixels(v) {
+    this.setPhi(v);
+    const px = new Uint8Array(canvas.width * canvas.height * 4);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    return px;
+  },
+  diff(a, b) {
+    const A = this.pixels(a), B = this.pixels(b);
+    let sum = 0, max = 0, changed = 0;
+    for (let i = 0; i < A.length; i += 4) for (let c = 0; c < 3; c++) {
+      const d = Math.abs(A[i + c] - B[i + c]); sum += d; if (d > max) max = d; if (d > 2) changed++;
+    }
+    return { meanAbs: sum / (A.length / 4 * 3), max, changedOver2: changed, pixels: A.length / 4 };
+  },
+};
+})();
+</script>
 </body>
 </html>
